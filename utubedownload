@@ -1,0 +1,185 @@
+#!/bin/bash
+
+#Joshua
+
+#YouTube regex expression
+#watch\?v=([a-zA-Z0-9_-]+)
+
+
+BOLD="\033[1m"
+UNBOLD="\033[22m"
+CHECK=${BOLD}"\033[36m"✔"\033[39m"${UNBOLD}
+COMPLETED=${BOLD}"\033[36m""[Completed]""\033[39m"${UNBOLD}
+INPROGRESS=${BOLD}"\033[31m""[In progress]""\033[39m"${UNBOLD}
+
+successMessage="completed ${CHECK} Done";
+fileExistMessage="already exists ${CHECK}";
+fileInProgressMessage="is being downloaded by another process!"
+
+presentWorkingDir=`pwd`;
+playListIncFile="playlist.inc";
+
+
+if [[ -f $playListIncFile ]]; then
+ playListName=`cat ${playListIncFile}`;
+fi
+playListData="playlist.data"
+regexPattern="watch\?v=([a-zA-Z0-9_-]+)"
+controlFileInProgressMessage=${BOLD}"\033[31m""[In progress]""\033[39m"${UNBOLD}
+controlFileCompletedMessage=${BOLD}"\033[36m""[Completed]""\033[39m"${UNBOLD}
+
+
+function lastCommandStatus(){
+	if [ $? -eq 0 ]; then
+		echo $lastCommandStatusMessage
+	else
+	    echo $lastCommandStatusFail
+	fi
+	}
+
+function curlFile(){
+
+#echo ${playListName};
+#echo $playListData;
+#echo ${regexPattern};
+
+	if [[ ! -f $playListData ]]; then
+		#touch $playListData;
+		curl https://www.youtube.com/playlist?list=${playListName} | grep -P --only-matching ${regexPattern}  | awk -F'=' '{print $2}' | uniq > ${playListData}
+	fi
+	
+}
+
+
+function _downloadFile(){
+	touch -- "${i}.control.inprogress"
+	downloadString="http://www.youtube.com/watch?v=$i"
+	echo "Downloading $downloadString"
+	youtube-dl --console-title  "$downloadString"
+	echo -e "$i $successMessage";
+	mv -- "${i}.control.inprogress" "${i}.control"	
+}
+
+function _checkControlFile() {
+	fileInprogress="${i}.control.inprogress";
+	fileCompleted="${i}.control";
+	if [[ -f "$fileInprogress" ]]; then
+		echo -e "File having name like $i is still in progress $controlFileInProgressMessage";
+	elif [[ -f "$fileCompleted" ]]; then
+		echo -e "File having name like $i has been downloaded successfully!! $controlFileCompletedMessage";
+	else
+		_downloadFile;
+	fi
+}	
+
+
+function getYouTubeMedia(){
+		curlFile;
+	cat ${playListData} | while read i
+	do
+		_checkControlFile;
+	done
+}
+
+function removeControlFiles(){
+	lastCommandStatusMessage="Control files deleted!"
+	lastCommandStatusFail="Error: Control files not deleted!"
+	rm -rf -- *.control
+	lastCommandStatus;
+	
+}
+
+
+function stripPlayList(){
+    cat ${playListData} > "${playListData}.backup"
+	cat ${playListData} | uniq | awk -F'=' '{print $2}' > "${playListData}.tmp"
+	cat "${playListData}.tmp" > ${playListData}
+}
+
+function playlistgenerate(){
+	#Before generating playlist file check that all files have been downloaded
+	#Create a file downloaded control file as a signature that all playlists has been downloaded
+	#each time the user execute this command overwrite the previous playlist file if it already exits.
+	echo "[playlist]" > track.pls;
+	echo "NumberOfEntries=$(wc -l ${playListData} | cut -f1 -d\ )" >> track.pls;
+	fileCount=0;
+	cat ${playListData} | while read i
+	do
+		trackFileName=`ls | grep -- $i | grep -v .control`
+		echo $trackFileName;
+		if [[ -f "$trackFileName" ]]; then
+			fileCount=$(($fileCount + 1));
+			echo "File$fileCount=$trackFileName" >> track.pls;
+		fi
+	done
+	echo "Playlist file generated";
+}
+
+function resumedownload(){
+	echo "Underdevelopment! Instruction isn't mapped!"
+	}
+
+
+case $1 in
+	download|load )
+	getYouTubeMedia;
+	;;
+	downloadmedia )
+	playlistdownloadmedia; #Not mapped
+	;;
+	"generateplaylist")
+	#stripPlayList;
+	playlistgenerate;
+	;;
+	"resume")
+	resumedownload; #Not mapped
+	;;
+	"cleanup")
+	removeControlFiles
+	;;
+	"stripplaylist")
+	stripPlayList;
+	;;
+	"prepare")
+	if [[ -f $playListIncFile ]]; then
+		removeControlFiles;
+		playlistgenerate;
+	else
+		stripPlayList;
+		removeControlFiles;
+		playlistgenerate;
+	fi
+	;;
+	*)
+	#getYouTubeMedia;
+	echo "Invalid argument, please check";
+esac
+
+
+
+
+#Deprecated function
+
+function fileChecker(){
+	
+	if ls *$i.flv > /dev/null 2>&1;  then
+	 completeFileName=`ls *$i.flv`;
+	 echo -e "$completeFileName $COMPLETED"
+	
+	elif ls *$i.flv.part > /dev/null 2>&1;  then
+	 completeFileName=`ls *$i.flv.part`;
+	 echo -e "$completeFileName $fileInProgressMessage $INPROGRESS";
+	
+	elif ls *$i.mp4 > /dev/null 2>&1;  then
+	 completeFileName=`ls *$i.mp4`;
+	  echo -e "$completeFileName $COMPLETED";
+	
+	elif ls *$i.mp4.part > /dev/null 2>&1;  then
+	completeFileName=`ls *$i.mp4.part`;
+	 echo -e "$completeFileName $fileInProgressMessage $INPROGRESS";
+	
+	else
+		_downloadFile;
+	fi
+	
+	}
